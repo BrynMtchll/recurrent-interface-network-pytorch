@@ -9,6 +9,8 @@ from torch import nn, einsum
 from torch.special import expm1
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
+import blobfile as bf
+
 
 from torch.optim import Adam
 from torchvision import transforms as T, utils
@@ -891,16 +893,18 @@ class GaussianDiffusion(nn.Module):
 class Dataset(Dataset):
     def __init__(
         self,
-        folder,
+        img_path,
         image_size,
         exts = ['jpg', 'jpeg', 'png', 'tiff'],
         augment_horizontal_flip = False,
         convert_image_to = None
     ):
         super().__init__()
-        self.folder = folder
+        with bf.BlobFile(img_path, "rb") as f:
+            self.img = Image.open(f)
+            self.img = self.img.convert("RGB")
+            self.img.load()
         self.image_size = image_size
-        self.paths = [p for ext in exts for p in Path(f'{folder}').glob(f'**/*.{ext}')]
 
         maybe_convert_fn = partial(convert_image_to, convert_image_to) if exists(convert_image_to) else nn.Identity()
 
@@ -911,14 +915,13 @@ class Dataset(Dataset):
             T.CenterCrop(image_size),
             T.ToTensor()
         ])
+        self.img = self.transform(self.img)
 
     def __len__(self):
-        return len(self.paths)
+        return 10000
 
     def __getitem__(self, index):
-        path = self.paths[index]
-        img = Image.open(path)
-        return self.transform(img)
+        return self.img
 
 # trainer class
 
