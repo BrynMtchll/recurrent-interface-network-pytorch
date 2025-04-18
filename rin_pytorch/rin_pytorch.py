@@ -423,7 +423,8 @@ class RIN(nn.Module):
 
         self.to_patches = Sequential(
             Rearrange('b c (h p1) (w p2) -> b (h w) (c p1 p2)', p1 = patch_size, p2 = patch_size),
-            nn.LayerNorm(pixel_patch_dim * 2) if dual_patchnorm else None,
+            nn.LayerNorm(pixel_patch_dim * 2),
+            # nn.AdaptiveAvgPool2d((pixel_patch_dim * 2, pixel_patch_dim * 2)),
             nn.Linear(pixel_patch_dim * 2, dim),
             nn.LayerNorm(dim) if dual_patchnorm else None,
         )
@@ -950,6 +951,7 @@ class Trainer(object):
         convert_image_to = None
     ):
         super().__init__()
+        print("neyyyyy")
 
         self.accelerator = Accelerator(
             split_batches = split_batches,
