@@ -1078,12 +1078,13 @@ class Trainer(object):
                         if save_and_sample:
                             self.ema.ema_model.eval()
 
-                            with torch.no_grad():
-                                batches = num_to_groups(self.num_samples, self.batch_size)
-                                all_images_list = list(map(lambda n: self.ema.ema_model.sample(batch_size=n), batches))
-
-                            all_images = torch.cat(all_images_list, dim = 0)
-                            utils.save_image(all_images, str(self.results_folder / f'sample-{milestone}.png'), nrow = int(math.sqrt(self.num_samples)))
+                            scales = [32, 64, 128, 256, 512, 1024]
+                            for i in range(6):
+                                with torch.no_grad():
+                                    batches = num_to_groups(self.num_samples, self.batch_size)
+                                    all_images_list = list(map(lambda n: self.ema.ema_model.sample(image_size=scales[i], batch_size=n), batches))
+                                all_images = torch.cat(all_images_list, dim = 0)
+                                utils.save_image(all_images, str(self.results_folder / f'sample-{milestone}-scale{scales[i]}.png'), nrow = int(math.sqrt(self.num_samples)))
 
                     if save_and_sample:
                         self.save(milestone)
