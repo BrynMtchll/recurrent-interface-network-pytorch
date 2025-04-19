@@ -1,6 +1,6 @@
 import math
 from pathlib import Path
-from random import random
+import random
 from functools import partial
 from multiprocessing import cpu_count
 
@@ -836,7 +836,7 @@ class GaussianDiffusion(nn.Module):
 
         self_cond = self_latents = None
 
-        if random() < self.train_prob_self_cond:
+        if random.random() < self.train_prob_self_cond:
             with torch.no_grad():
                 model_output, self_latents = self.model(noised_img, times, h, return_latents = True)
                 self_latents = self_latents.detach()
