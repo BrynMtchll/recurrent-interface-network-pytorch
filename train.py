@@ -28,7 +28,7 @@ trainer = Trainer(
     patch_size = patch_size,
     gradient_accumulate_every = 4,
     train_lr = 1e-4,
-    save_and_sample_every = 1000,
+    save_and_sample_every = 5000,
     train_num_steps = 100000,         # total training steps
     ema_decay = 0.995,                # exponential moving average decay
 )

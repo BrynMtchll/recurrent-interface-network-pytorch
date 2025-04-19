@@ -673,8 +673,8 @@ class GaussianDiffusion(nn.Module):
 
         x_start = None
         last_latents = None
-
-        for time, time_next in tqdm(time_pairs, desc = 'sampling loop time step', total = self.timesteps):
+        print("sampling...")
+        for time, time_next in time_pairs:
 
             # add the time delay
 
@@ -747,8 +747,8 @@ class GaussianDiffusion(nn.Module):
 
         x_start = None
         last_latents = None
-
-        for times, times_next in tqdm(time_pairs, desc = 'sampling loop time step'):
+        print("sampling...")
+        for times, times_next in time_pairs:
 
             # get times and noise levels
 
@@ -1078,8 +1078,8 @@ class Trainer(object):
                         if save_and_sample:
                             self.ema.ema_model.eval()
 
-                            scales = [32, 64, 128, 256, 512, 1024]
-                            for i in range(6):
+                            scales = [64, 128, 256, 512]
+                            for i in range(len(scales)):
                                 with torch.no_grad():
                                     batches = num_to_groups(self.num_samples, self.batch_size)
                                     all_images_list = list(map(lambda n: self.ema.ema_model.sample(image_size=scales[i], batch_size=n), batches))
