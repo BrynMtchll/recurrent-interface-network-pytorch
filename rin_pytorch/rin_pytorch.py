@@ -447,9 +447,6 @@ class RIN(nn.Module):
         )
 
         # nn.Parameter(torch.randn(2, patch_height_width, dim) * 0.02)
-        print(dim)
-        print(pixel_patch_dim)
-        print(patch_size)
         self.to_pixels = nn.Sequential(
             LayerNorm(dim),
             nn.Linear(dim, pixel_patch_dim),
@@ -511,9 +508,7 @@ class RIN(nn.Module):
             latents = torch.cat((latents, t), dim = -2)
 
         # to patches
-        print(x.shape)
         patches = self.to_patches(x)
-        print(patches.shape)
 
         height_range = width_range = torch.linspace(0., 1., steps = int(math.sqrt(patches.shape[-2])), device = self.device)
         pos_emb_h, pos_emb_w = self.axial_pos_emb_height_mlp(height_range), self.axial_pos_emb_width_mlp(width_range)
@@ -527,9 +522,7 @@ class RIN(nn.Module):
             patches, latents = block(patches, latents, t)
 
         # to pixels
-        print(patches.shape)
         pixels = self.to_pixels(patches)
-        print(pixels.shape)
         patch_height_width = img_size // self.patch_size
         pixels = rearrange(pixels, 'b (h w) (c p1 p2) -> b c (h p1) (w p2)', p1 = self.patch_size, p2 = self.patch_size, h = patch_height_width)
 
@@ -911,6 +904,7 @@ class Dataset(Dataset):
             T.Lambda(maybe_convert_fn),
             T.Resize(self.resolution),
             T.RandomHorizontalFlip() if augment_horizontal_flip else nn.Identity(),
+            T.CenterCrop(self.resolution),
             T.ToTensor()
         ])
         self.img = self.transform(self.img)
