@@ -685,7 +685,7 @@ class GaussianDiffusion(nn.Module):
             # get predicted x0
 
             maybe_normalized_img = self.maybe_normalize_img_variance(img)
-            model_output, last_latents = self.model(maybe_normalized_img, noise_cond, x_start, last_latents, return_latents = True)
+            model_output, last_latents = self.model(maybe_normalized_img, noise_cond, shape[2], x_start, last_latents, return_latents = True)
 
             # get log(snr)
 
@@ -767,7 +767,7 @@ class GaussianDiffusion(nn.Module):
             # predict x0
 
             maybe_normalized_img = self.maybe_normalize_img_variance(img)
-            model_output, last_latents = self.model(maybe_normalized_img, times, x_start, last_latents, return_latents = True)
+            model_output, last_latents = self.model(maybe_normalized_img, times, shape[2], x_start, last_latents, return_latents = True)
 
             # calculate x0 and noise
 
