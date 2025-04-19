@@ -379,7 +379,6 @@ class RIN(nn.Module):
     def __init__(
         self,
         dim,
-        image_size,
         patch_size = 16,
         channels = 3,
         depth = 6,                      # number of RIN blocks
@@ -393,14 +392,10 @@ class RIN(nn.Module):
         **attn_kwargs
     ):
         super().__init__()
-        assert divisible_by(image_size, patch_size)
         dim_latent = default(dim_latent, dim)
 
-        self.image_size = image_size
         self.channels = channels # times 2 due to self-conditioning
-
-        patch_height_width = image_size // patch_size
-        num_patches = patch_height_width ** 2
+        self.patch_size = patch_size
         pixel_patch_dim = channels * (patch_size ** 2)
 
         # time conditioning
@@ -452,11 +447,12 @@ class RIN(nn.Module):
         )
 
         # nn.Parameter(torch.randn(2, patch_height_width, dim) * 0.02)
-
+        print(dim)
+        print(pixel_patch_dim)
+        print(patch_size)
         self.to_pixels = nn.Sequential(
             LayerNorm(dim),
             nn.Linear(dim, pixel_patch_dim),
-            Rearrange('b (h w) (c p1 p2) -> b c (h p1) (w p2)', p1 = patch_size, p2 = patch_size, h = patch_height_width)
         )
 
         self.latents = nn.Parameter(torch.randn(num_latents, dim_latent))
@@ -484,6 +480,7 @@ class RIN(nn.Module):
         self,
         x,
         time,
+        img_size,
         x_self_cond = None,
         latent_self_cond = None,
         return_latents = False
@@ -514,8 +511,9 @@ class RIN(nn.Module):
             latents = torch.cat((latents, t), dim = -2)
 
         # to patches
-
+        print(x.shape)
         patches = self.to_patches(x)
+        print(patches.shape)
 
         height_range = width_range = torch.linspace(0., 1., steps = int(math.sqrt(patches.shape[-2])), device = self.device)
         pos_emb_h, pos_emb_w = self.axial_pos_emb_height_mlp(height_range), self.axial_pos_emb_width_mlp(width_range)
@@ -529,8 +527,11 @@ class RIN(nn.Module):
             patches, latents = block(patches, latents, t)
 
         # to pixels
-
+        print(patches.shape)
         pixels = self.to_pixels(patches)
+        print(pixels.shape)
+        patch_height_width = img_size // self.patch_size
+        pixels = rearrange(pixels, 'b (h w) (c p1 p2) -> b c (h p1) (w p2)', p1 = self.patch_size, p2 = self.patch_size, h = patch_height_width)
 
         if not return_latents:
             return pixels
@@ -619,8 +620,6 @@ class GaussianDiffusion(nn.Module):
 
         assert objective in {'x0', 'eps', 'v'}, 'objective must be either predict x0 or noise'
         self.objective = objective
-
-        self.image_size = model.image_size
 
         if noise_schedule == "linear":
             self.gamma_schedule = simple_linear_schedule
@@ -803,15 +802,15 @@ class GaussianDiffusion(nn.Module):
         return unnormalize_img(img)
 
     @torch.no_grad()
-    def sample(self, batch_size = 16):
-        image_size, channels = self.image_size, self.channels
+    def sample(self, image_size = 128, batch_size = 16):
+        channels = self.channels
         sample_fn = self.ddpm_sample if not self.use_ddim else self.ddim_sample
         return sample_fn((batch_size, channels, image_size, image_size))
 
     def forward(self, img, *args, **kwargs):
-        batch, c, h, w, device, img_size, = *img.shape, img.device, self.image_size
-        assert h == img_size and w == img_size, f'height and width of image must be {img_size}'
-
+        batch, c, h, w, device = *img.shape, img.device
+        # assert h == img_size and w == img_size, f'height and width of image must be {img_size}'
+        assert h == w
         # sample random times
 
         times = torch.zeros((batch,), device = device).float().uniform_(0, 1.)
@@ -839,7 +838,7 @@ class GaussianDiffusion(nn.Module):
 
         if random() < self.train_prob_self_cond:
             with torch.no_grad():
-                model_output, self_latents = self.model(noised_img, times, return_latents = True)
+                model_output, self_latents = self.model(noised_img, times, h, return_latents = True)
                 self_latents = self_latents.detach()
 
                 if self.objective == 'x0':
@@ -856,7 +855,7 @@ class GaussianDiffusion(nn.Module):
 
         # predict and take gradient step
 
-        pred = self.model(noised_img, times, self_cond, self_latents)
+        pred = self.model(noised_img, times, h, self_cond, self_latents)
 
         if self.objective == 'eps':
             target = noise
@@ -895,7 +894,7 @@ class Dataset(Dataset):
     def __init__(
         self,
         img_path,
-        image_size,
+        resolution,
         exts = ['jpg', 'jpeg', 'png', 'tiff'],
         augment_horizontal_flip = False,
         convert_image_to = None
@@ -905,15 +904,13 @@ class Dataset(Dataset):
             self.img = Image.open(f)
             self.img = self.img.convert("RGB")
             self.img.load()
-        self.image_size = image_size
 
         maybe_convert_fn = partial(convert_image_to, convert_image_to) if exists(convert_image_to) else nn.Identity()
 
         self.transform = T.Compose([
             T.Lambda(maybe_convert_fn),
-            T.Resize(image_size),
+            T.Resize(resolution),
             T.RandomHorizontalFlip() if augment_horizontal_flip else nn.Identity(),
-            T.CenterCrop(image_size),
             T.ToTensor()
         ])
         self.img = self.transform(self.img)
@@ -933,6 +930,7 @@ class Trainer(object):
         diffusion_model: GaussianDiffusion,
         folder,
         *,
+        resolution = 128,
         train_batch_size = 16,
         gradient_accumulate_every = 1,
         augment_horizontal_flip = True,
@@ -969,11 +967,10 @@ class Trainer(object):
         self.max_grad_norm = max_grad_norm
 
         self.train_num_steps = train_num_steps
-        self.image_size = diffusion_model.image_size
 
         # dataset and dataloader
 
-        self.ds = Dataset(folder, self.image_size, augment_horizontal_flip = augment_horizontal_flip, convert_image_to = convert_image_to)
+        self.ds = Dataset(folder, resolution = resolution, augment_horizontal_flip = augment_horizontal_flip, convert_image_to = convert_image_to)
         dl = DataLoader(self.ds, batch_size = train_batch_size, shuffle = True, pin_memory = True, num_workers = cpu_count())
 
         dl = self.accelerator.prepare(dl)
@@ -1034,6 +1031,7 @@ class Trainer(object):
     def train(self):
         accelerator = self.accelerator
         device = accelerator.device
+        print("training...")
 
         with tqdm(initial = self.step, total = self.train_num_steps, disable = not accelerator.is_main_process) as pbar:
 
