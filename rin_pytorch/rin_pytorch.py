@@ -951,7 +951,6 @@ class Trainer(object):
         convert_image_to = None
     ):
         super().__init__()
-        print("neyyyyy")
 
         self.accelerator = Accelerator(
             split_batches = split_batches,
