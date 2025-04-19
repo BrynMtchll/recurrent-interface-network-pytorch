@@ -906,14 +906,23 @@ class Dataset(Dataset):
             self.img.load()
 
         maybe_convert_fn = partial(convert_image_to, convert_image_to) if exists(convert_image_to) else nn.Identity()
-
+        self.resolution = resolution
         self.transform = T.Compose([
             T.Lambda(maybe_convert_fn),
-            T.Resize(resolution),
+            T.Resize(self.resolution),
             T.RandomHorizontalFlip() if augment_horizontal_flip else nn.Identity(),
             T.ToTensor()
         ])
         self.img = self.transform(self.img)
+
+    def random_resize(self, data, patch_size):
+        new_resolution = self.resolution * random.uniform(0.75, 1.25)
+        curr_h = round(data.shape[2] * new_resolution)
+        curr_w = round(data.shape[3] * new_resolution)
+        curr_h, curr_w = patch_size * (curr_h // patch_size), patch_size * (curr_w // patch_size)
+        data = F.interpolate(data, (curr_h, curr_w), mode="bicubic")
+
+        return data
 
     def __len__(self):
         return 10000
@@ -932,6 +941,7 @@ class Trainer(object):
         *,
         resolution = 128,
         train_batch_size = 16,
+        patch_size = 8,
         gradient_accumulate_every = 1,
         augment_horizontal_flip = True,
         train_lr = 1e-4,
@@ -967,6 +977,8 @@ class Trainer(object):
         self.max_grad_norm = max_grad_norm
 
         self.train_num_steps = train_num_steps
+
+        self.patch_size = patch_size
 
         # dataset and dataloader
 
@@ -1041,7 +1053,7 @@ class Trainer(object):
 
                 for _ in range(self.gradient_accumulate_every):
                     data = next(self.dl).to(device)
-
+                    self.ds.random_resize(data, self.patch_size)
                     with accelerator.autocast():
                         loss = self.model(data)
                         loss = loss / self.gradient_accumulate_every
