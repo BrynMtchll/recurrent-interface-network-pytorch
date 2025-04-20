@@ -888,6 +888,7 @@ class Dataset(Dataset):
         self,
         img_path,
         resolution,
+        patch_size,
         exts = ['jpg', 'jpeg', 'png', 'tiff'],
         augment_horizontal_flip = False,
         convert_image_to = None
@@ -909,20 +910,31 @@ class Dataset(Dataset):
         ])
         self.img = self.transform(self.img)
 
-    def random_resize(self, data, patch_size):
-        new_resolution = self.resolution * random.uniform(0.75, 1.25)
-        curr_h = round(data.shape[2] * new_resolution)
-        curr_w = round(data.shape[3] * new_resolution)
-        curr_h, curr_w = patch_size * (curr_h // patch_size), patch_size * (curr_w // patch_size)
-        data = F.interpolate(data, (curr_h, curr_w), mode="bicubic")
+        self.rand_interps = []
+        for i in range(2000):
+            new_resolution = self.resolution * random.uniform(0.5, 1.25)
+            curr_h = round(data.shape[2] * new_resolution)
+            curr_w = round(data.shape[3] * new_resolution)
+            curr_h, curr_w = patch_size * (curr_h // patch_size), patch_size * (curr_w // patch_size)
+            data = F.interpolate(data, (curr_h, curr_w), mode="bicubic")
+            self.rand_interps.append(data)
+            
 
-        return data
+    # def random_resize(self, data, patch_size):
+    #     new_resolution = self.resolution * random.uniform(0.5, 1.25)
+    #     curr_h = round(data.shape[2] * new_resolution)
+    #     curr_w = round(data.shape[3] * new_resolution)
+    #     curr_h, curr_w = patch_size * (curr_h // patch_size), patch_size * (curr_w // patch_size)
+    #     data = F.interpolate(data, (curr_h, curr_w), mode="bicubic")
+
+    #     return data
 
     def __len__(self):
-        return 10000
+        return 2000
 
     def __getitem__(self, index):
-        return self.img
+        idx = random.randrange(0, 2000)
+        return self.rand_interps[idx]
 
 # trainer class
 
@@ -945,7 +957,7 @@ class Trainer(object):
         ema_decay = 0.995,
         betas = (0.9, 0.99),
         save_and_sample_every = 1000,
-        num_samples = 25,
+        num_samples = 16,
         results_folder = './results',
         amp = False,
         mixed_precision_type = 'fp16',
