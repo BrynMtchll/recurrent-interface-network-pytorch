@@ -266,9 +266,8 @@ class PEG(nn.Module):
         super().__init__()
         self.ds_conv = nn.Conv2d(dim, dim, 3, padding = 1, groups = dim)
 
-    def forward(self, x):
+    def forward(self, x, hw):
         b, n, d = x.shape
-        hw = int(math.sqrt(n))
         x = rearrange(x, 'b (h w) d -> b d h w', h = hw)
         x = self.ds_conv(x)
         x = rearrange(x, 'b d h w -> b (h w) d')
@@ -345,8 +344,8 @@ class RINBlock(nn.Module):
         self.patches_attend_to_latents = Attention(dim, dim_context = dim_latent, norm = True, norm_context = True, **attn_kwargs)
         self.patches_cross_attn_ff = FeedForward(dim)
 
-    def forward(self, patches, latents, t):
-        patches = self.patches_peg(patches) + patches
+    def forward(self, patches, hw, latents, t):
+        patches = self.patches_peg(patches, hw) + patches
 
         # latents extract or cluster information from the patches
 
@@ -427,7 +426,7 @@ class RIN(nn.Module):
         # axial positional embeddings, parameterized by an MLP
 
         pos_emb_dim = dim // 2
-
+        print(pos_emb_dim)
         self.axial_pos_emb_height_mlp = nn.Sequential(
             Rearrange('... -> ... 1'),
             nn.Linear(1, pos_emb_dim),
@@ -449,7 +448,11 @@ class RIN(nn.Module):
         # nn.Parameter(torch.randn(2, patch_height_width, dim) * 0.02)
         self.to_pixels = nn.Sequential(
             LayerNorm(dim),
+            nn.Linear(dim, dim),
+            LayerNorm(dim),
             nn.Linear(dim, pixel_patch_dim),
+            LayerNorm(pixel_patch_dim),
+            nn.Linear(pixel_patch_dim, pixel_patch_dim),
         )
 
         self.latents = nn.Parameter(torch.randn(num_latents, dim_latent))
@@ -511,16 +514,20 @@ class RIN(nn.Module):
         # to patches
         patches = self.to_patches(x)
 
-        height_range = width_range = torch.linspace(0., 1., steps = int(math.sqrt(patches.shape[-2])), device = self.device)
-        pos_emb_h, pos_emb_w = self.axial_pos_emb_height_mlp(height_range), self.axial_pos_emb_width_mlp(width_range)
+        h = int(x.shape[-2] / self.patch_size)
+        w = int(x.shape[-1] / self.patch_size)
 
+        height_range = torch.linspace(0., 1., steps = h, device = self.device)
+        width_range = torch.linspace(0., 1., steps = w, device = self.device)
+
+        pos_emb_h, pos_emb_w = self.axial_pos_emb_height_mlp(height_range), self.axial_pos_emb_width_mlp(width_range)
         pos_emb = rearrange(pos_emb_h, 'i d -> i 1 d') + rearrange(pos_emb_w, 'j d -> 1 j d')
         patches = patches + rearrange(pos_emb, 'i j d -> (i j) d')
 
         # the recurrent interface network body
 
         for block in self.blocks:
-            patches, latents = block(patches, latents, t)
+            patches, latents = block(patches, h, latents, t)
 
         # to pixels
         pixels = self.to_pixels(patches)
@@ -1101,8 +1108,8 @@ class Trainer(object):
                         if save_and_sample:
                             self.ema.ema_model.eval()
 
-                            scales_h = [64, 128, 128, 256]
-                            scales_w = [64, 128, 256, 256]
+                            scales_h = [128, 256, 512, 256]
+                            scales_w = [128, 256, 256, 512]
                             for i in range(len(scales_h)):
                                 with torch.no_grad():
                                     batches = num_to_groups(self.num_samples, self.batch_size)
