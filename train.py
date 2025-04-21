@@ -5,10 +5,10 @@ import os
 patch_size = 8
 
 model = RIN(
-    dim = 128,                  # model dimensions
-    patch_size = 8,             # patch size
+    dim = 256,                  # model dimensions
+    patch_size = patch_size,             # patch size
     depth = 6,                  # depth
-    num_latents = 128,          # number of latents. they used 256 in the paper
+    num_latents = 256,          # number of latents. they used 256 in the paper
     dim_latent = 512,           # can be greater than the image dimension (dim) for greater capacity
     latent_self_attn_depth = 4, # number of latent self attention blocks per recurrent step, K in the paper
 ).cuda()
@@ -21,9 +21,9 @@ diffusion = GaussianDiffusion(
 ).cuda()
 trainer = Trainer(
     diffusion,
-    '/content/recurrent-interface-network-pytorch/data/image-1.png',
+    '/content/recurrent-interface-network-pytorch/data/pyramids.png',
     num_samples = 16,
-    resolution = 64,
+    resolution = 128,
     train_batch_size = 4,
     patch_size = patch_size,
     gradient_accumulate_every = 4,

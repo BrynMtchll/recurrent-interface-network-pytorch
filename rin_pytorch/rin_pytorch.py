@@ -477,7 +477,8 @@ class RIN(nn.Module):
         self,
         x,
         time,
-        img_size,
+        img_height,
+        img_width,
         x_self_cond = None,
         latent_self_cond = None,
         return_latents = False
@@ -523,8 +524,9 @@ class RIN(nn.Module):
 
         # to pixels
         pixels = self.to_pixels(patches)
-        patch_height_width = img_size // self.patch_size
-        pixels = rearrange(pixels, 'b (h w) (c p1 p2) -> b c (h p1) (w p2)', p1 = self.patch_size, p2 = self.patch_size, h = patch_height_width)
+        patches_height = img_height // self.patch_size
+        patches_width = img_width // self.patch_size
+        pixels = rearrange(pixels, 'b (h w) (c p1 p2) -> b c (h p1) (w p2)', p1 = self.patch_size, p2 = self.patch_size, h = patches_height, w = patches_width)
 
         if not return_latents:
             return pixels
@@ -685,7 +687,7 @@ class GaussianDiffusion(nn.Module):
             # get predicted x0
 
             maybe_normalized_img = self.maybe_normalize_img_variance(img)
-            model_output, last_latents = self.model(maybe_normalized_img, noise_cond, shape[2], x_start, last_latents, return_latents = True)
+            model_output, last_latents = self.model(maybe_normalized_img, noise_cond, shape[2], shape[3], x_start, last_latents, return_latents = True)
 
             # get log(snr)
 
@@ -767,7 +769,7 @@ class GaussianDiffusion(nn.Module):
             # predict x0
 
             maybe_normalized_img = self.maybe_normalize_img_variance(img)
-            model_output, last_latents = self.model(maybe_normalized_img, times, shape[2], x_start, last_latents, return_latents = True)
+            model_output, last_latents = self.model(maybe_normalized_img, times, shape[2], shape[3], x_start, last_latents, return_latents = True)
 
             # calculate x0 and noise
 
@@ -795,15 +797,15 @@ class GaussianDiffusion(nn.Module):
         return unnormalize_img(img)
 
     @torch.no_grad()
-    def sample(self, image_size = 128, batch_size = 16):
+    def sample(self, img_height = 128, img_width = 128, batch_size = 16):
         channels = self.channels
         sample_fn = self.ddpm_sample if not self.use_ddim else self.ddim_sample
-        return sample_fn((batch_size, channels, image_size, image_size))
+        return sample_fn((batch_size, channels, img_height, img_width))
 
     def forward(self, img, *args, **kwargs):
         batch, c, h, w, device = *img.shape, img.device
         # assert h == img_size and w == img_size, f'height and width of image must be {img_size}'
-        assert h == w
+
         # sample random times
 
         times = torch.zeros((batch,), device = device).float().uniform_(0, 1.)
@@ -831,7 +833,7 @@ class GaussianDiffusion(nn.Module):
 
         if random.random() < self.train_prob_self_cond:
             with torch.no_grad():
-                model_output, self_latents = self.model(noised_img, times, h, return_latents = True)
+                model_output, self_latents = self.model(noised_img, times, h, w, return_latents = True)
                 self_latents = self_latents.detach()
 
                 if self.objective == 'x0':
@@ -848,7 +850,7 @@ class GaussianDiffusion(nn.Module):
 
         # predict and take gradient step
 
-        pred = self.model(noised_img, times, h, self_cond, self_latents)
+        pred = self.model(noised_img, times, h, w, self_cond, self_latents)
 
         if self.objective == 'eps':
             target = noise
@@ -909,15 +911,15 @@ class Dataset(Dataset):
             T.ToTensor()
         ])
         self.img = self.transform(self.img)
+        self.patch_size = patch_size
 
-        self.rand_interps = []
-        for i in range(2000):
-            new_resolution = self.resolution * random.uniform(0.5, 1.25)
-            curr_h = round(data.shape[2] * new_resolution)
-            curr_w = round(data.shape[3] * new_resolution)
-            curr_h, curr_w = patch_size * (curr_h // patch_size), patch_size * (curr_w // patch_size)
-            data = F.interpolate(data, (curr_h, curr_w), mode="bicubic")
-            self.rand_interps.append(data)
+        # self.rand_interps = []
+        # print(self.img.shape)
+        # for i in range(2000):
+        #     new_resolution = self.resolution * random.uniform(0.5, 1.25)
+        #     new_resolution = round(patch_size * (new_resolution // patch_size))
+        #     data = F.interpolate(self.img, (new_resolution, new_resolution), mode="bicubic")
+        #     self.rand_interps.append(data)
             
 
     # def random_resize(self, data, patch_size):
@@ -930,11 +932,20 @@ class Dataset(Dataset):
     #     return data
 
     def __len__(self):
-        return 2000
+        return 10000
+
+    def interp(self, data):
+        new_resolution_w = self.resolution * random.uniform(0.5, 1.5)
+        new_resolution_h = self.resolution * random.uniform(0.5, 1.5)
+
+        new_resolution_w = round(self.patch_size * (new_resolution_w // self.patch_size))
+        new_resolution_h = round(self.patch_size * (new_resolution_h // self.patch_size))
+
+        data = F.interpolate(data, (new_resolution_h, new_resolution_w), mode="bicubic")
+        return data
 
     def __getitem__(self, index):
-        idx = random.randrange(0, 2000)
-        return self.rand_interps[idx]
+        return self.img
 
 # trainer class
 
@@ -988,7 +999,7 @@ class Trainer(object):
 
         # dataset and dataloader
 
-        self.ds = Dataset(folder, resolution = resolution, augment_horizontal_flip = augment_horizontal_flip, convert_image_to = convert_image_to)
+        self.ds = Dataset(folder, resolution = resolution, patch_size=patch_size, augment_horizontal_flip = augment_horizontal_flip, convert_image_to = convert_image_to)
         dl = DataLoader(self.ds, batch_size = train_batch_size, shuffle = True, pin_memory = True, num_workers = cpu_count())
 
         dl = self.accelerator.prepare(dl)
@@ -1059,7 +1070,7 @@ class Trainer(object):
 
                 for _ in range(self.gradient_accumulate_every):
                     data = next(self.dl).to(device)
-                    self.ds.random_resize(data, self.patch_size)
+                    data = self.ds.interp(data)
                     with accelerator.autocast():
                         loss = self.model(data)
                         loss = loss / self.gradient_accumulate_every
@@ -1090,13 +1101,14 @@ class Trainer(object):
                         if save_and_sample:
                             self.ema.ema_model.eval()
 
-                            scales = [64, 128, 256, 512]
-                            for i in range(len(scales)):
+                            scales_h = [64, 128, 128, 256]
+                            scales_w = [64, 128, 256, 256]
+                            for i in range(len(scales_h)):
                                 with torch.no_grad():
                                     batches = num_to_groups(self.num_samples, self.batch_size)
-                                    all_images_list = list(map(lambda n: self.ema.ema_model.sample(image_size=scales[i], batch_size=n), batches))
+                                    all_images_list = list(map(lambda n: self.ema.ema_model.sample(img_height=scales_h[i], img_width = scales_w[i], batch_size=n), batches))
                                 all_images = torch.cat(all_images_list, dim = 0)
-                                utils.save_image(all_images, str(self.results_folder / f'sample-{milestone}-scale{scales[i]}.png'), nrow = int(math.sqrt(self.num_samples)))
+                                utils.save_image(all_images, str(self.results_folder / f'sample-{milestone}-scale-{scales_h[i]}x{scales_w[i]}.png'), nrow = int(math.sqrt(self.num_samples)))
 
                     if save_and_sample:
                         self.save(milestone)
