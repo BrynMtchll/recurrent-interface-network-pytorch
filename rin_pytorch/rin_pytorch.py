@@ -451,12 +451,12 @@ class RIN(nn.Module):
         # nn.Parameter(torch.randn(2, patch_height_width, dim) * 0.02)
         self.to_pixels = nn.Sequential(
             LayerNorm(dim),
-            nn.Linear(dim, dim),
-            LayerNorm(dim),
-            nn.AdaptiveAvgPool2d((pixel_patch_dim, pixel_patch_dim)),
-            nn.Linear(pixel_patch_dim, pixel_patch_dim),
-            LayerNorm(pixel_patch_dim),
-            nn.Linear(pixel_patch_dim, pixel_patch_dim),
+            # nn.Linear(dim, dim),
+            # LayerNorm(dim),
+            # nn.AdaptiveAvgPool2d((pixel_patch_dim, pixel_patch_dim)),
+            nn.Linear(dim, pixel_patch_dim),
+            # LayerNorm(pixel_patch_dim),
+            # nn.Linear(pixel_patch_dim, pixel_patch_dim),
         )
 
         self.latents = nn.Parameter(torch.randn(num_latents, dim_latent))
@@ -518,34 +518,46 @@ class RIN(nn.Module):
         # to patches
 
         stride = self.patch_size - 2
-        patches = F.unfold(x, kernel_size=(self.patch_size, self.patch_size), stride=(stride, stride))
+        patches = F.unfold(x, kernel_size=(self.patch_size, self.patch_size), stride=(stride, stride), dilation=2)
         patches = rearrange(patches, 'b p l -> b l p')
-        print(x.shape)
-        print(patches.shape)
-        print(rearrange(x, 'b c (h p1) (w p2) -> b (h w) (c p1 p2)', p1 = self.patch_size, p2 = self.patch_size).shape)
         patches = self.to_patches(patches)
 
         # ((h - k - 1) / s + 1) * (((w - k - 1) / s) + 1)
-        h = round((x.shape[-2] - self.patch_size - 1) / stride) + 1
-        w = round((x.shape[-1] - self.patch_size - 1) / stride) + 1
+        lh = round((x.shape[-2] - self.patch_size - 1) / stride) + 1
+        lw = round((x.shape[-1] - self.patch_size - 1) / stride) + 1
+        xh = x.shape[-2]
+        xw = x.shape[-1]
+
+        #(h - 1) * s = (ph - k - 1)
+        #(h - 1) * s + 1 + k = h
+        #(w - 1) * s + 1 + k = w
 
 
-        height_range = torch.linspace(0., 1., steps = h, device = self.device)
-        width_range = torch.linspace(0., 1., steps = w, device = self.device)
+        height_range = torch.linspace(0., 1., steps = lh, device = self.device)
+        width_range = torch.linspace(0., 1., steps = lw, device = self.device)
 
         pos_emb_h, pos_emb_w = self.axial_pos_emb_height_mlp(height_range), self.axial_pos_emb_width_mlp(width_range)
         pos_emb = rearrange(pos_emb_h, 'i d -> i 1 d') + rearrange(pos_emb_w, 'j d -> 1 j d')
+        # print(lh)
+        # print(lw)
+        # print(x.shape)
+        # print(patches.shape)
+        # print(pos_emb.shape)
+        # print(rearrange(pos_emb, 'i j d -> (i j) d').shape)
+
         patches = patches + rearrange(pos_emb, 'i j d -> (i j) d')
 
         # the recurrent interface network body
 
         for block in self.blocks:
-            patches, latents = block(patches, h, latents, t)
+            patches, latents = block(patches, lh, latents, t)
 
         # to pixels
         pixels = self.to_pixels(patches)
-        pixels = rearrange(pixels, 'b (h w) (c p1 p2) -> b c (h p1) (w p2)', p1 = self.patch_size, p2 = self.patch_size, h = h, w = w)
-
+        pixels = rearrange(pixels, 'b l p -> b p l')
+        pixels = F.fold(pixels, output_size=(xh, xw), kernel_size=(self.patch_size, self.patch_size), stride=(stride, stride), dilation=2)
+        
+        # pixels = rearrange(pixels, 'b (h w) (c p1 p2) -> b c (h p1) (w p2)', p1 = self.patch_size, p2 = self.patch_size, h = lh, w = lw)
         if not return_latents:
             return pixels
 
@@ -956,8 +968,8 @@ class Dataset(Dataset):
         new_resolution_w = self.resolution * random.uniform(0.5, 1.5)
         new_resolution_h = self.resolution * random.uniform(0.5, 1.5)
 
-        new_resolution_w = round(self.patch_size * (new_resolution_w // self.patch_size))
-        new_resolution_h = round(self.patch_size * (new_resolution_h // self.patch_size))
+        new_resolution_w = round((self.patch_size - 2) * (new_resolution_w // (self.patch_size - 2))) + self.patch_size + 1
+        new_resolution_h = round((self.patch_size - 2) * (new_resolution_h // (self.patch_size - 2))) + self.patch_size + 1
 
         data = F.interpolate(data, (new_resolution_h, new_resolution_w), mode="bicubic")
         return data
@@ -1134,8 +1146,8 @@ class Trainer(object):
                         if save_and_sample:
                             self.ema.ema_model.eval()
 
-                            scales_h = [128, 256, 512, 256, 512]
-                            scales_w = [128, 256, 256, 512, 512]
+                            scales_h = [129, 249, 519, 249, 519]
+                            scales_w = [129, 249, 249, 519, 519]
                             for i in range(len(scales_h)):
                                 with torch.no_grad():
                                     batches = num_to_groups(self.num_samples, self.batch_size)

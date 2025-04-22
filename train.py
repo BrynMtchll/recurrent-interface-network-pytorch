@@ -16,9 +16,9 @@ model = RIN(
 diffusion = GaussianDiffusion(
     model,
     timesteps = 400,
-    noise_schedule = 'cosine',
+    noise_schedule = 'sigmoid',
     train_prob_self_cond = 0.9,  # how often to self condition on latents
-    scale = 1.                   # this will be set to < 1. for more noising and leads to better convergence when training on higher resolution images (512, 1024) - input noised images will be auto variance normalized
+    scale = 0.9                   # this will be set to < 1. for more noising and leads to better convergence when training on higher resolution images (512, 1024) - input noised images will be auto variance normalized
 ).cuda()
 trainer = Trainer(
     diffusion,
