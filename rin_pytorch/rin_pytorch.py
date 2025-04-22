@@ -22,6 +22,8 @@ from einops.layers.torch import Rearrange
 
 from rin_pytorch.attend import Attend
 
+import numpy
+
 from PIL import Image
 from tqdm.auto import tqdm
 from ema_pytorch import EMA
@@ -415,8 +417,9 @@ class RIN(nn.Module):
 
         # pixels to patch and back
 
+
         self.to_patches = Sequential(
-            Rearrange('b c (h p1) (w p2) -> b (h w) (c p1 p2)', p1 = patch_size, p2 = patch_size),
+            # Rearrange('b c (h p1) (w p2) -> b (h w) (c p1 p2)', p1 = patch_size, p2 = patch_size),
             nn.LayerNorm(pixel_patch_dim * 2),
             # nn.AdaptiveAvgPool2d((pixel_patch_dim * 2, pixel_patch_dim * 2)),
             nn.Linear(pixel_patch_dim * 2, dim),
@@ -450,7 +453,8 @@ class RIN(nn.Module):
             LayerNorm(dim),
             nn.Linear(dim, dim),
             LayerNorm(dim),
-            nn.Linear(dim, pixel_patch_dim),
+            nn.AdaptiveAvgPool2d((pixel_patch_dim, pixel_patch_dim)),
+            nn.Linear(pixel_patch_dim, pixel_patch_dim),
             LayerNorm(pixel_patch_dim),
             nn.Linear(pixel_patch_dim, pixel_patch_dim),
         )
@@ -512,7 +516,10 @@ class RIN(nn.Module):
             latents = torch.cat((latents, t), dim = -2)
 
         # to patches
-        patches = self.to_patches(x)
+
+        patches = F.unfold(x, kernel_size=(self.patch_size + 2, self.patch_size + 2), stride=(self.patch_size, self.patch_size))
+        patches = rearrange(patches, 'b p l -> b l p')
+        patches = self.to_patches(patches)
 
         h = int(x.shape[-2] / self.patch_size)
         w = int(x.shape[-1] / self.patch_size)
@@ -579,7 +586,7 @@ def cosine_schedule(t, start = 0, end = 1, tau = 1, clip_min = 1e-9):
     power = 2 * tau
     v_start = math.cos(start * math.pi / 2) ** power
     v_end = math.cos(end * math.pi / 2) ** power
-    output = math.cos((t * (end - start) + start) * math.pi / 2) ** power
+    output = math.cos((t.detach().cpu().numpy() * (end - start) + start) * math.pi / 2) ** power
     output = (v_end - output) / (v_end - v_start)
     return output.clamp(min = clip_min)
 
@@ -950,6 +957,19 @@ class Dataset(Dataset):
 
         data = F.interpolate(data, (new_resolution_h, new_resolution_w), mode="bicubic")
         return data
+    
+    def random_crop(self, data): 
+        new_h = int(data.shape[2] * random.uniform(0.5, 1))
+        new_w = int(data.shape[3] * random.uniform(0.5, 1))
+        # new_h = round(self.patch_size * (new_h // self.patch_size))
+        # new_w = round(self.patch_size * (new_w // self.patch_size))
+
+        offset_h = int((data.shape[2] - new_h) * random.uniform(0, 1))
+        offset_w = int((data.shape[3] - new_w) * random.uniform(0, 1))
+        # offset_h = round(self.patch_size * (offset_h // self.patch_size))
+        # offset_w = round(self.patch_size * (offset_w // self.patch_size))
+
+        return data[:,:,offset_h: offset_h + new_h, offset_w: offset_w + new_w]
 
     def __getitem__(self, index):
         return self.img
@@ -1077,7 +1097,9 @@ class Trainer(object):
 
                 for _ in range(self.gradient_accumulate_every):
                     data = next(self.dl).to(device)
+                    # data = self.ds.random_crop(data)
                     data = self.ds.interp(data)
+
                     with accelerator.autocast():
                         loss = self.model(data)
                         loss = loss / self.gradient_accumulate_every
@@ -1108,8 +1130,8 @@ class Trainer(object):
                         if save_and_sample:
                             self.ema.ema_model.eval()
 
-                            scales_h = [128, 256, 512, 256]
-                            scales_w = [128, 256, 256, 512]
+                            scales_h = [128, 256, 512, 256, 512]
+                            scales_w = [128, 256, 256, 512, 512]
                             for i in range(len(scales_h)):
                                 with torch.no_grad():
                                     batches = num_to_groups(self.num_samples, self.batch_size)
