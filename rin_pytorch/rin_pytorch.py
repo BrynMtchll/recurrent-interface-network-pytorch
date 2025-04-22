@@ -544,9 +544,7 @@ class RIN(nn.Module):
 
         # to pixels
         pixels = self.to_pixels(patches)
-        patches_height = img_height // self.patch_size
-        patches_width = img_width // self.patch_size
-        pixels = rearrange(pixels, 'b (h w) (c p1 p2) -> b c (h p1) (w p2)', p1 = self.patch_size, p2 = self.patch_size, h = patches_height, w = patches_width)
+        pixels = rearrange(pixels, 'b (h w) (c p1 p2) -> b c (h p1) (w p2)', p1 = self.patch_size, p2 = self.patch_size, h = h, w = w)
 
         if not return_latents:
             return pixels
