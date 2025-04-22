@@ -517,12 +517,18 @@ class RIN(nn.Module):
 
         # to patches
 
-        patches = F.unfold(x, kernel_size=(self.patch_size + 2, self.patch_size + 2), stride=(self.patch_size, self.patch_size))
+        stride = self.patch_size - 2
+        patches = F.unfold(x, kernel_size=(self.patch_size, self.patch_size), stride=(stride, stride))
         patches = rearrange(patches, 'b p l -> b l p')
+        print(x.shape)
+        print(patches.shape)
+        print(rearrange(x, 'b c (h p1) (w p2) -> b (h w) (c p1 p2)', p1 = self.patch_size, p2 = self.patch_size).shape)
         patches = self.to_patches(patches)
 
-        h = int(x.shape[-2] / self.patch_size)
-        w = int(x.shape[-1] / self.patch_size)
+        # ((h - k - 1) / s + 1) * (((w - k - 1) / s) + 1)
+        h = round((x.shape[-2] - self.patch_size - 1) / stride) + 1
+        w = round((x.shape[-1] - self.patch_size - 1) / stride) + 1
+
 
         height_range = torch.linspace(0., 1., steps = h, device = self.device)
         width_range = torch.linspace(0., 1., steps = w, device = self.device)
@@ -586,7 +592,7 @@ def cosine_schedule(t, start = 0, end = 1, tau = 1, clip_min = 1e-9):
     power = 2 * tau
     v_start = math.cos(start * math.pi / 2) ** power
     v_end = math.cos(end * math.pi / 2) ** power
-    output = math.cos((t.detach().cpu().numpy() * (end - start) + start) * math.pi / 2) ** power
+    output = torch.cos((t * (end - start) + start) * math.pi / 2) ** power
     output = (v_end - output) / (v_end - v_start)
     return output.clamp(min = clip_min)
 
