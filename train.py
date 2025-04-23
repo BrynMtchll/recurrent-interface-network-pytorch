@@ -16,18 +16,18 @@ model = RIN(
 diffusion = GaussianDiffusion(
     model,
     timesteps = 400,
-    noise_schedule = 'sigmoid',
+    noise_schedule = 'cosine',
     train_prob_self_cond = 0.9,  # how often to self condition on latents
-    scale = 0.9                   # this will be set to < 1. for more noising and leads to better convergence when training on higher resolution images (512, 1024) - input noised images will be auto variance normalized
+    scale = 1.                   # this will be set to < 1. for more noising and leads to better convergence when training on higher resolution images (512, 1024) - input noised images will be auto variance normalized
 ).cuda()
 trainer = Trainer(
     diffusion,
-    '/content/recurrent-interface-network-pytorch/data/pyramids.png',
+    '/content/recurrent-interface-network-pytorch/data/comp4528-mini-proj-image.png',
     num_samples = 16,
     resolution = 256,
     train_batch_size = 8,
     patch_size = patch_size,
-    gradient_accumulate_every = 4,
+    gradient_accumulate_every = 2,
     train_lr = 1e-3,
     save_and_sample_every = 2000,
     train_num_steps = 100000,         # total training steps

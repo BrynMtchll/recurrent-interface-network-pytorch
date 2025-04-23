@@ -517,8 +517,8 @@ class RIN(nn.Module):
 
         # to patches
 
-        stride = self.patch_size - 2
-        patches = F.unfold(x, kernel_size=(self.patch_size, self.patch_size), stride=(stride, stride), dilation=2)
+        stride = self.patch_size - 3
+        patches = F.unfold(x, kernel_size=(self.patch_size, self.patch_size), stride=(stride, stride))
         patches = rearrange(patches, 'b p l -> b l p')
         patches = self.to_patches(patches)
 
@@ -555,7 +555,7 @@ class RIN(nn.Module):
         # to pixels
         pixels = self.to_pixels(patches)
         pixels = rearrange(pixels, 'b l p -> b p l')
-        pixels = F.fold(pixels, output_size=(xh, xw), kernel_size=(self.patch_size, self.patch_size), stride=(stride, stride), dilation=2)
+        pixels = F.fold(pixels, output_size=(xh, xw), kernel_size=(self.patch_size, self.patch_size), stride=(stride, stride))
         
         # pixels = rearrange(pixels, 'b (h w) (c p1 p2) -> b c (h p1) (w p2)', p1 = self.patch_size, p2 = self.patch_size, h = lh, w = lw)
         if not return_latents:
@@ -968,8 +968,8 @@ class Dataset(Dataset):
         new_resolution_w = self.resolution * random.uniform(0.5, 1.5)
         new_resolution_h = self.resolution * random.uniform(0.5, 1.5)
 
-        new_resolution_w = round((self.patch_size - 2) * (new_resolution_w // (self.patch_size - 2))) + self.patch_size + 1
-        new_resolution_h = round((self.patch_size - 2) * (new_resolution_h // (self.patch_size - 2))) + self.patch_size + 1
+        new_resolution_w = round((self.patch_size - 3) * (new_resolution_w // (self.patch_size - 3))) + self.patch_size + 1
+        new_resolution_h = round((self.patch_size - 3) * (new_resolution_h // (self.patch_size - 3))) + self.patch_size + 1
 
         data = F.interpolate(data, (new_resolution_h, new_resolution_w), mode="bicubic")
         return data
@@ -1146,8 +1146,8 @@ class Trainer(object):
                         if save_and_sample:
                             self.ema.ema_model.eval()
 
-                            scales_h = [129, 249, 519, 249, 519]
-                            scales_w = [129, 249, 249, 519, 519]
+                            scales_h = [129, 249, 514, 249, 514]
+                            scales_w = [129, 249, 249, 514, 514]
                             for i in range(len(scales_h)):
                                 with torch.no_grad():
                                     batches = num_to_groups(self.num_samples, self.batch_size)
