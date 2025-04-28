@@ -1,3 +1,11 @@
+# My Additions
+I have added `train.py` and `evaluate.py` for training and evaluation. 
+`evaluation.py` will load a trained model (which have all been omitted since they're 7gb in size), generate samples at specified resolutions with a specified batch size, save these samples and compute the evaluation metrics for them. 
+
+Have a look at my <a href="https://github.com/BrynMtchll/recurrent-interface-network-pytorch/commits">commits</a> to see the code changes I've mode to the model.
+
+# From Root
+
 <img src="./images/rin.png" width="500png"></img>
 
 <img src="./images/latent-self-conditioning.png" width="600px"></img>
